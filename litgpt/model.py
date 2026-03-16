@@ -100,11 +100,11 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def concat_whisper_feat(self, audio_feature, input_ids, T, task):
+    def concat_whisper_feat(self, audio_feature, input_ids, T, task, start=1):
         for j in range(len(T)):
             if task[j] != "T1T2" and task[j] != "T1A2":
                 for i in range(7):
-                    input_ids[i][j, 1 : T[j] + 1, :] = audio_feature[j][: T[j]].clone()
+                    input_ids[i][j, start : start + T[j], :] = audio_feature[j][: T[j]].clone()
             else:
                 continue
         return input_ids
@@ -116,6 +116,7 @@ class GPT(nn.Module):
         input_pos: Optional[torch.Tensor] = None,
         whisper_lens: Optional[list] = None,
         task: Optional[str] = None,
+        whisper_start: int = 1,
     ) -> torch.Tensor:
 
         show = False
@@ -153,7 +154,7 @@ class GPT(nn.Module):
 
             # concat whisper feature
             input_emb = self.concat_whisper_feat(
-                x_a, [x0, x1, x2, x3, x4, x5, x6, x7], whisper_lens, task
+                x_a, [x0, x1, x2, x3, x4, x5, x6, x7], whisper_lens, task, start=whisper_start
             )
             x0, x1, x2, x3, x4, x5, x6, x7 = input_emb
 

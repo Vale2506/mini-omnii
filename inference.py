@@ -101,30 +101,43 @@ def get_input_ids_whisper(
     return audio_feature.unsqueeze(0), input_ids
 
 
-def get_input_ids_whisper_ATBatch(mel, leng, whispermodel, device):
+def get_input_ids_whisper_ATBatch(mel, leng, whispermodel, device, system_prompt_tokens=None):
     with torch.no_grad():
         mel = mel.unsqueeze(0).to(device)
         # audio_feature = whisper.decode(whispermodel,mel, options).audio_features
         audio_feature = whispermodel.embed_audio(mel)[0][:leng]
     T = audio_feature.size(0)
+    system_len = len(system_prompt_tokens) if system_prompt_tokens is not None else 0
+
     input_ids_AA = []
     for i in range(7):
         input_ids_item = []
         input_ids_item.append(layershift(_input_a, i))
+        if system_len > 0:
+            input_ids_item += [layershift(_pad_a, i)] * system_len
         input_ids_item += [layershift(_pad_a, i)] * T
         input_ids_item += [(layershift(_eoa, i)), layershift(_answer_a, i)]
         input_ids_AA.append(torch.tensor(input_ids_item))
-    input_id_T = torch.tensor([_input_t] + [_pad_t] * T + [_eot, _answer_t])
+    
+    text_seq = [_input_t]
+    if system_len > 0:
+        text_seq += system_prompt_tokens
+    text_seq += [_pad_t] * T
+    text_seq += [_eot, _answer_t]
+    input_id_T = torch.tensor(text_seq)
     input_ids_AA.append(input_id_T)
 
     input_ids_AT = []
     for i in range(7):
         input_ids_item = []
         input_ids_item.append(layershift(_input_a, i))
+        if system_len > 0:
+            input_ids_item += [layershift(_pad_a, i)] * system_len
         input_ids_item += [layershift(_pad_a, i)] * T
         input_ids_item += [(layershift(_eoa, i)), layershift(_pad_a, i)]
         input_ids_AT.append(torch.tensor(input_ids_item))
-    input_id_T = torch.tensor([_input_t] + [_pad_t] * T + [_eot, _answer_t])
+    
+    input_id_T = torch.tensor(text_seq) # Use same text sequence
     input_ids_AT.append(input_id_T)
 
     input_ids = [input_ids_AA, input_ids_AT]
@@ -133,7 +146,7 @@ def get_input_ids_whisper_ATBatch(mel, leng, whispermodel, device):
         for j in range(8):
             stacked_inputids[j].append(input_ids[i][j])
     stacked_inputids = [torch.stack(tensors) for tensors in stacked_inputids]
-    return torch.stack([audio_feature, audio_feature]), stacked_inputids
+    return torch.stack([audio_feature, audio_feature]), stacked_inputids, T, system_len
 
 
 def load_audio(path):
@@ -393,6 +406,7 @@ class OmniInference:
                             top_p=1.0,
                             eos_id_a=_eoa,
                             eos_id_t=_eot,
+                            system_prompt=None,
         ):
 
         assert os.path.exists(audio_path), f"audio file {audio_path} not found"
@@ -402,26 +416,31 @@ class OmniInference:
             model.set_kv_cache(batch_size=2,device=self.device)
 
         mel, leng = load_audio(audio_path)
-        audio_feature, input_ids = get_input_ids_whisper_ATBatch(mel, leng, self.whispermodel, self.device)
-        T = input_ids[0].size(1)
+        system_prompt_tokens = None
+        if system_prompt:
+            system_prompt_tokens = self.text_tokenizer.encode(system_prompt).tolist()
+            
+        audio_feature, input_ids, audio_T, system_len = get_input_ids_whisper_ATBatch(mel, leng, self.whispermodel, self.device, system_prompt_tokens)
+        total_T = input_ids[0].size(1)
         device = input_ids[0].device
 
-        assert max_returned_tokens > T, f"max_returned_tokens {max_returned_tokens} should be greater than audio length {T}"
+        assert max_returned_tokens > total_T, f"max_returned_tokens {max_returned_tokens} should be greater than total sequence length {total_T}"
 
         if model.max_seq_length < max_returned_tokens - 1:
             raise NotImplementedError(
                 f"max_seq_length {model.max_seq_length} needs to be >= {max_returned_tokens - 1}"
             )
 
-        input_pos = torch.tensor([T], device=device)
+        input_pos = torch.tensor([total_T], device=device)
         list_output = [[] for i in range(8)]
         tokens_A, token_T = next_token_batch(
             model,
             audio_feature.to(torch.float32).to(model.device),
             input_ids,
-            [T - 3, T - 3],
+            [audio_T, audio_T],
             ["A1T2", "A1T2"],
-            input_pos=torch.arange(0, T, device=device),
+            input_pos=torch.arange(0, total_T, device=device),
+            whisper_start=1 + system_len,
             temperature=temperature,
             top_k=top_k,
             top_p=top_p,
@@ -447,7 +466,8 @@ class OmniInference:
         nums_generate = stream_stride
         begin_generate = False
         current_index = 0
-        for _ in tqdm(range(2, max_returned_tokens - T + 1)):
+        text_response = ""
+        for _ in tqdm(range(2, max_returned_tokens - total_T + 1)):
             tokens_A, token_T = next_token_batch(
                 model,
                 None,
@@ -459,6 +479,13 @@ class OmniInference:
                 top_k=top_k,
                 top_p=top_p,
             )
+            
+            # Log text response
+            t_token = token_T.item()
+            if t_token != _pad_t and t_token != _eot:
+                char = self.text_tokenizer.decode(token_T)
+                text_response += char
+                print(char, end="", flush=True)
 
             if text_end:
                 token_T = torch.tensor([_pad_t], device=device)

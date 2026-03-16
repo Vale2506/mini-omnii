@@ -82,11 +82,12 @@ def next_token_asr(
     audio_features: torch.tensor,
     lens: int,
     input_ids: list,
+    whisper_start: int = 1,
     **kwargs: Any,
 ) -> torch.Tensor:
     input_pos = input_pos.to(model.device)
     input_ids = [input_id.to(model.device) for input_id in input_ids]
-    logits_a, logit_t = model(audio_features, input_ids, input_pos, whisper_lens=lens)
+    logits_a, logit_t = model(audio_features, input_ids, input_pos, whisper_lens=lens, whisper_start=whisper_start)
 
     next_audio_tokens = []
     for logit_a in logits_a:
@@ -103,12 +104,13 @@ def next_token_A1T2(
     whisper_lens: int,
     task: list,
     input_pos: torch.Tensor,
+    whisper_start: int = 1,
     **kwargs: Any,
 ) -> torch.Tensor:
     input_pos = input_pos.to(model.device)
     input_ids = [input_id.to(model.device) for input_id in input_ids]
     logits_a, logit_t = model(
-        audio_features, input_ids, input_pos, whisper_lens=whisper_lens, task=task
+        audio_features, input_ids, input_pos, whisper_lens=whisper_lens, task=task, whisper_start=whisper_start
     )
 
     next_audio_tokens = []
@@ -144,12 +146,13 @@ def next_token_batch(
     whisper_lens: int,
     task: list,
     input_pos: torch.Tensor,
+    whisper_start: int = 1,
     **kwargs: Any,
 ) -> torch.Tensor:
     input_pos = input_pos.to(model.device)
     input_ids = [input_id.to(model.device) for input_id in input_ids]
     logits_a, logit_t = model(
-        audio_features, input_ids, input_pos, whisper_lens=whisper_lens, task=task
+        audio_features, input_ids, input_pos, whisper_lens=whisper_lens, task=task, whisper_start=whisper_start
     )
 
     for i in range(7):

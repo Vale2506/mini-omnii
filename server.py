@@ -10,6 +10,7 @@ import base64
 import tempfile
 import traceback
 from flask import Flask, Response, stream_with_context
+import urllib.parse
 
 
 class OmniChatServer(object):
@@ -40,8 +41,23 @@ class OmniChatServer(object):
 
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 f.write(data_buf)
-                audio_generator = self.client.run_AT_batch_stream(f.name, stream_stride, max_tokens)
-                return Response(stream_with_context(audio_generator), mimetype="audio/wav")
+                f.flush()
+                
+                # Transcribe input (ASR)
+                self.client.whispermodel.to(self.client.device)
+                asr_result = self.client.whispermodel.transcribe(f.name)
+                transcription = asr_result.get("text", "").strip()
+                print(f"👂 Heard: {transcription}")
+                
+                # Default system prompt to ensure helpfulness
+                default_prompt = "You are a helpful AI assistant called Omni. You answer all questions directly and helpfully. You are knowledgeable about the world, including countries like Romania."
+                system_prompt = req_data.get("system_prompt", default_prompt)
+                
+                audio_generator = self.client.run_AT_batch_stream(f.name, stream_stride, max_tokens, system_prompt=system_prompt)
+                
+                resp = Response(stream_with_context(audio_generator), mimetype="audio/wav")
+                resp.headers["X-ASR-Transcription"] = urllib.parse.quote(transcription)
+                return resp
         except Exception as e:
             print(traceback.format_exc())
 
