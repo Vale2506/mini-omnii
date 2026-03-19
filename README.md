@@ -55,33 +55,39 @@ cd mini-omni
 pip install -r requirements.txt
 ```
 
-## Quick start
+## Quick start / Pornire rapidă
 
-**Interactive demo**
+**1. Start Server / Pornire Server**
 
-- start server
-
-NOTE: you need to start the server before running the streamlit or gradio demo with API_URL set to the server address.
+You need to start the server before running the streamlit or gradio demo.
+Trebuie să pornești serverul înainte de a rula demo-ul Streamlit sau Gradio.
 
 ```sh
-sudo apt-get install ffmpeg
-conda activate omni
-cd mini-omni
-python3 server.py --ip '0.0.0.0' --port 60808
+# Activate virtual environment / Activare mediu virtual
+source venv/bin/activate
+
+# Run on GPU (Recommended) / Rulare pe GPU (Recomandat)
+python3 server.py --ip '0.0.0.0' --port 60808 --device cuda:0
+
+# OR Run on CPU / SAU Rulare pe CPU
+python3 server.py --ip '0.0.0.0' --port 60808 --device cpu
 ```
 
+**2. Run Web UI / Rulare Interfață Web**
 
-- run streamlit demo
+Choose one of the interfaces below / Alege una dintre interfețele de mai jos:
 
-NOTE: you need to run streamlit **locally** with PyAudio installed. For error: `ModuleNotFoundError: No module named 'utils.vad'`, please run `export PYTHONPATH=./` first.
-
+- **Streamlit Demo (Recommended / Recomandat)**
 ```sh
-pip install PyAudio==0.2.14
+source venv/bin/activate
+export PYTHONPATH=./
 API_URL=http://0.0.0.0:60808/chat streamlit run webui/omni_streamlit.py
 ```
 
-- run gradio demo
+- **Gradio Demo**
 ```sh
+source venv/bin/activate
+export PYTHONPATH=./
 API_URL=http://0.0.0.0:60808/chat python3 webui/omni_gradio.py
 ```
 
